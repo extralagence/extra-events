@@ -13,16 +13,16 @@
  *
  * @wordpress-plugin
  * Plugin Name:       Extra Events
- * Plugin URI:        @TODO
+ * Plugin URI:        https://github.com/extralagence/extra-events
  * Description:       Extra plugin to override events-manager
  * Version:           1.0.0
- * Author:            @TODO
- * Author URI:        @TODO
- * Text Domain:       extra-events-locale
+ * Author:            Vincent Saïsset
+ * Author URI:        http://www.extralagence.com
+ * Text Domain:       extra-events
  * License:           GPL-2.0+
  * License URI:       http://www.gnu.org/licenses/gpl-2.0.txt
  * Domain Path:       /languages
- * GitHub Plugin URI: https://github.com/<owner>/<repo>
+ * GitHub Plugin URI: https://github.com/extralagence/extra-events
  * WordPress-Plugin-Boilerplate: v2.6.1
  */
 
@@ -36,6 +36,20 @@ if ( ! defined( 'WPINC' ) ) {
  *----------------------------------------------------------------------------*/
 
 require_once( plugin_dir_path( __FILE__ ) . 'public/class-extra-events.php' );
+require_once( plugin_dir_path( __FILE__ ) . 'FieldInterface.php' );
+require_once( plugin_dir_path( __FILE__ ) . 'AbstractField.php' );
+//Require once each fields
+Extra_Events::$field_types_by_name = array();
+foreach (scandir(plugin_dir_path( __FILE__ ).'/fields') as $field_folder) {
+	$path = dirname(__FILE__).'/fields/'.$field_folder.'/'.$field_folder.'.php';
+	if (is_file($path)) {
+		require_once $path;
+		$field_name = 'ExtraEvents\\Fields\\'.$field_folder;
+		/* @var $field_type \ExtraEvents\Fields\FieldInterface */
+		$field_type =  new $field_name();
+		Extra_Events::$field_types_by_name[$field_type::get_name()] = $field_type;
+	}
+}
 
 /*
  * Register hooks that are fired when the plugin is activated or deactivated.

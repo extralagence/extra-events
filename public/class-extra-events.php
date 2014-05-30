@@ -16,8 +16,6 @@
  * If you're interested in introducing administrative or dashboard
  * functionality, then refer to `class-extra-events-admin.php`
  *
- * @TODO: Rename this class to a proper name for your plugin.
- *
  * @package Extra_Events
  * @author  Vincent Saïsset <vs@extralagence.com>
  */
@@ -33,8 +31,6 @@ class Extra_Events {
 	const VERSION = '1.0.0';
 
 	/**
-	 * @TODO - Rename "extra-events" to the name your your plugin
-	 *
 	 * Unique identifier for your plugin.
 	 *
 	 *
@@ -57,6 +53,8 @@ class Extra_Events {
 	 */
 	protected static $instance = null;
 
+	public static $field_types_by_name = array();
+
 	/**
 	 * Initialize the plugin by setting localization and loading public scripts
 	 * and styles.
@@ -75,12 +73,9 @@ class Extra_Events {
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_styles' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_scripts' ) );
 
-		/* Define custom functionality.
-		 * Refer To http://codex.wordpress.org/Plugin_API#Hooks.2C_Actions_and_Filters
-		 */
-		add_action( '@TODO', array( $this, 'action_method_name' ) );
-		add_filter( '@TODO', array( $this, 'filter_method_name' ) );
-
+		// HOOK EVENTS MANAGER
+		add_filter( 'emp_forms_output_field', array( $this, 'output_field' ), 10, 3);
+		add_filter('emp_form_validate_field', array( $this, 'validate_field' ), 20, 4);
 	}
 
 	/**
@@ -122,6 +117,11 @@ class Extra_Events {
 	 *                                       activated on an individual blog.
 	 */
 	public static function activate( $network_wide ) {
+
+		if ( (! is_plugin_active( 'events-manager/events-manager.php' ) || ! is_plugin_active( 'events-manager-pro/events-manager-pro.php' )) and current_user_can( 'activate_plugins' ) ) {
+			// Stop activation redirect and show error
+			wp_die(__("Désolé, mais ce plugin nécessite Events Manager et Event Manager Pro pour être activé", "extra-events").' <br><a href="' . admin_url( 'plugins.php' ) . '">&laquo; '.__("Retourner aux plugins", "extra-events").'</a>');
+		}
 
 		if ( function_exists( 'is_multisite' ) && is_multisite() ) {
 
@@ -234,7 +234,6 @@ class Extra_Events {
 	 * @since    1.0.0
 	 */
 	private static function single_activate() {
-		// @TODO: Define activation functionality here
 	}
 
 	/**
@@ -243,7 +242,6 @@ class Extra_Events {
 	 * @since    1.0.0
 	 */
 	private static function single_deactivate() {
-		// @TODO: Define deactivation functionality here
 	}
 
 	/**
@@ -279,30 +277,171 @@ class Extra_Events {
 		wp_enqueue_script( $this->plugin_slug . '-plugin-script', plugins_url( 'assets/js/public.js', __FILE__ ), array( 'jquery' ), self::VERSION );
 	}
 
+
+	/**************************
+	 *
+	 * HOOKS EVENTS MANAGER
+	 *
+	 *************************/
+
 	/**
-	 * NOTE:  Actions are points in the execution of a page or process
-	 *        lifecycle that WordPress fires.
+	 * Callback for emp_forms_output_field
 	 *
-	 *        Actions:    http://codex.wordpress.org/Plugin_API#Actions
-	 *        Reference:  http://codex.wordpress.org/Plugin_API/Action_Reference
+	 * @param $html
+	 * @param $fields
+	 * @param $field
 	 *
-	 * @since    1.0.0
+	 * @return string
 	 */
-	public function action_method_name() {
-		// @TODO: Define your action hook callback here
+	public function output_field($html, $fields, $field) {
+
+		$type = $field['type'];
+		if (array_key_exists($type, Extra_Events::$field_types_by_name)) {
+			/* @var $field_type \ExtraEvents\Fields\FieldInterface */
+			$field_type = Extra_Events::$field_types_by_name[$type];
+			$field_type::init($this->plugin_slug);
+			$html = $field_type::get_front($field);
+		}
+
+		return $html;
+	}
+
+
+	/**
+	 * Callback for emp_form_validate_field
+	 *
+	 * @param $result
+	 * @param $field
+	 * @param $value
+	 * @param $EM_Form EM_Form
+	 *
+	 * @return int
+	 */
+	public function validate_field($result, $field, $value, $EM_Form) {
+		/* @var $EM_Booking EM_Booking */
+		/* @var $extra_event_metabox ExtraMetaBox */
+		global $EM_Booking;
+		$value_by_field_id = $EM_Booking->booking_meta['booking'];
+
+		$type = $field['type'];
+		$required = $field['required'] == 1;
+
+		//Requirement management for extra fields
+		if ($required) {
+			if (array_key_exists($type, Extra_Events::$field_types_by_name)) {
+				/* @var $field_type \ExtraEvents\Fields\FieldInterface */
+				$field_type = Extra_Events::$field_types_by_name[$type];
+				if ($field_type::is_empty($field, $value, $EM_Form)) {
+					$result = false;
+				}
+			}
+		}
+
+		$ignored = false;
+
+		// Requirement management when in conditional block
+		if($type != \ExtraEvents\Fields\StartConditional::get_name() && $type != \ExtraEvents\Fields\StopConditional::get_name()) {
+			$parent_conditional_fields = $this->get_parent_conditional_fields($field, $EM_Form->form_fields);
+			if(count($parent_conditional_fields) > 0) {
+				$all_parents_selected = true;
+				$i = 0;
+				while($i < count($parent_conditional_fields) && $all_parents_selected) {
+					$parent_conditional_field = $parent_conditional_fields[$i];
+					$currentValue = $value_by_field_id[$parent_conditional_field['fieldid']];
+					if ($currentValue == false) {
+						$all_parents_selected = false;
+					}
+					$i++;
+				}
+
+				if (!$all_parents_selected) {
+					$ignored = true;
+					if (!$result && $required) {
+						array_pop($EM_Form->errors);
+						$result = 1;
+					}
+				}
+			}
+		}
+
+		if (!$ignored) {
+			if (array_key_exists($type, Extra_Events::$field_types_by_name)) {
+				/* @var $field_type \ExtraEvents\Fields\FieldInterface */
+				$field_type = Extra_Events::$field_types_by_name[$type];
+				if (!$field_type::validate($field, $value, $EM_Form)) {
+					$result = false;
+				}
+			}
+		}
+
+		return $result;
 	}
 
 	/**
-	 * NOTE:  Filters are points of execution in which WordPress modifies data
-	 *        before saving it or sending it to the browser.
+	 * @param $field mixed|array
+	 * @param $fields mixed|array
 	 *
-	 *        Filters: http://codex.wordpress.org/Plugin_API#Filters
-	 *        Reference:  http://codex.wordpress.org/Plugin_API/Filter_Reference
-	 *
-	 * @since    1.0.0
+	 * @return array
 	 */
-	public function filter_method_name() {
-		// @TODO: Define your filter hook callback here
+	protected function get_parent_conditional_fields($field, $fields) {
+		$field_id = $field['fieldid'];
+		$parent_conditional_fields = array();
+
+		$fields_by_position = array();
+
+		$current_position = null;
+		$i = 0;
+		foreach ($fields as $current_id => $current_field) {
+			if($current_id == $field_id) {
+				$current_position = $i;
+			}
+			$fields_by_position[] = $current_field;
+			$i++;
+		}
+
+		$i = $current_position;
+		while($i > 0) {
+			$current_field = $fields_by_position[$i];
+			if ($current_field['type'] == \ExtraEvents\Fields\StartConditional::get_name()) {
+				if ($this->is_in_conditional($current_position, $i, $fields_by_position)) {
+					$parent_conditional_fields[] = $current_field;
+				}
+			}
+			$i--;
+		}
+
+		return $parent_conditional_fields;
 	}
 
+	/**
+	 * @param $element_to_test_position
+	 * @param $start_position
+	 * @param $fields_by_position
+	 *
+	 * @return bool
+	 */
+	protected function is_in_conditional($element_to_test_position, $start_position, $fields_by_position) {
+		$nb_open = 1;
+
+		$is_in = false;
+
+		$i = $start_position + 1;
+		while ($i < count($fields_by_position) && $nb_open > 0) {
+			$current_field = $fields_by_position[$i];
+			$current_type = $current_field['type'];
+
+			if ($i == $element_to_test_position) {
+				$is_in = true;
+			}
+
+			if ($current_type == \ExtraEvents\Fields\StartConditional::get_name()) {
+				$nb_open++;
+			} else if ($current_type == \ExtraEvents\Fields\StopConditional::get_name()) {
+				$nb_open--;
+			}
+			$i++;
+		}
+
+		return $is_in;
+	}
 }
