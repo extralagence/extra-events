@@ -34,6 +34,23 @@ interface FieldInterface {
 
 	/**
 	 * @param $field mixed|array
+	 * @param $value
+	 *
+	 * @return string
+	 */
+	static function get_admin($field, $value);
+	/**
+	 * @param $field mixed|array
+	 * @param $value
+	 *
+	 * @return string
+	 */
+	static function get_formatted_value($field, $value);
+
+
+
+	/**
+	 * @param $field mixed|array
 	 * @param $value string
 	 * @param $EM_Form \EM_Form
 	 *

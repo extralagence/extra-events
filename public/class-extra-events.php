@@ -76,6 +76,17 @@ class Extra_Events {
 		// HOOK EVENTS MANAGER
 		add_filter( 'emp_forms_output_field', array( $this, 'output_field' ), 10, 3);
 		add_filter('emp_form_validate_field', array( $this, 'validate_field' ), 20, 4);
+
+		add_action('init', array( $this, 'init_paybox_gateway'));
+	}
+
+	public function init_paybox_gateway() {
+		if (apply_filters('extra_events_paybox_enabled', false) === true) {
+			if (class_exists('EM_Gateways')) {
+				require_once( dirname(__FILE__) . '/class-extra-gateway-paybox.php' );
+				EM_Gateways::register_gateway('paybox', 'Extra_Gateway_Paybox');
+			}
+		}
 	}
 
 	/**
@@ -303,7 +314,42 @@ class Extra_Events {
 			$html = $field_type::get_front($field);
 		}
 
+		if ($type == 'checkbox') {
+			$html = $this->output_checkbox($field);
+		}
+
 		return $html;
+	}
+
+	private function output_checkbox($field) {
+		ob_start();
+		$required = ( !empty($field['required']) ) ? ' '.apply_filters('emp_forms_output_field_required','<span class="em-form-required">*</span>'):'';
+
+		$tip_type = $field['type'];
+
+		$default = '';
+		if(!empty($_REQUEST[$field['fieldid']])) {
+			$default = is_array($_REQUEST[$field['fieldid']]) ? $_REQUEST[$field['fieldid']]:esc_attr($_REQUEST[$field['fieldid']]);
+		}
+
+		$field_name = !empty($field['name']) ? $field['name']:$field['fieldid'];
+		?>
+		<p class="input-group input-<?php echo $field['type']; ?> input-field-<?php echo $field['fieldid'] ?>">
+			<input type="checkbox" name="<?php echo $field_name ?>" id="<?php echo $field['fieldid'] ?>" value="1" <?php if( ($default && $default != 'n/a') || $field['options_checkbox_checked']) echo 'checked="checked"'; ?> />
+
+			<label for='<?php echo $field['fieldid'] ?>'>
+				<?php if( !empty($field['options_'.$tip_type.'_tip']) ): ?>
+					<span class="form-tip" title="<?php echo esc_attr($field['options_'.$tip_type.'_tip']); ?>">
+										<?php echo $field['label'] ?> <?php echo $required  ?>
+									</span>
+				<?php else: ?>
+					<?php echo $field['label'] ?> <?php echo $required  ?>
+				<?php endif; ?>
+			</label>
+		</p>
+		<?php
+
+		return ob_get_clean();
 	}
 
 

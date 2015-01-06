@@ -36,6 +36,7 @@ if ( ! defined( 'WPINC' ) ) {
  *----------------------------------------------------------------------------*/
 
 require_once( plugin_dir_path( __FILE__ ) . 'public/class-extra-events.php' );
+require_once( plugin_dir_path( __FILE__ ) . 'public/class-profile-editor.php' );
 require_once( plugin_dir_path( __FILE__ ) . 'FieldInterface.php' );
 require_once( plugin_dir_path( __FILE__ ) . 'AbstractField.php' );
 //Require once each fields
@@ -59,6 +60,7 @@ register_activation_hook( __FILE__, array( 'Extra_Events', 'activate' ) );
 register_deactivation_hook( __FILE__, array( 'Extra_Events', 'deactivate' ) );
 
 add_action( 'plugins_loaded', array( 'Extra_Events', 'get_instance' ) );
+add_action( 'plugins_loaded', array( 'Extra_Profile_Editor', 'get_instance' ) );
 
 /*----------------------------------------------------------------------------*
  * Dashboard and Administrative Functionality

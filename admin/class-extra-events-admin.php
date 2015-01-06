@@ -77,6 +77,8 @@ class Extra_Events_Admin {
 
 		// HOOK EVENTS MANAGER
 		add_action( 'emp_form_add_custom_fields', array( $this, 'add_custom_fields'));
+		add_filter( 'emp_forms_output_field_input', array( $this, 'output_field_input' ), 10, 4);
+		add_filter( 'extra_emp_forms_get_formatted_value', array( $this, 'output_field_formatted_value' ), 10, 2);
 	}
 
 	/**
@@ -321,5 +323,55 @@ class Extra_Events_Admin {
 
 			echo '<option value="'.$field_type::get_name().'"'.$selected.$override_type.'>'.$field_type::get_admin_label().'</option>';
 		}
+	}
+
+	/**
+	 * Callback for emp_forms_output_field
+	 *
+	 * @param $html
+	 * @param $fields
+	 * @param $field
+	 *
+	 * @return string
+	 */
+	public function output_field_input($html, $empForm, $field, $field_value) {
+
+		$type = $field['type'];
+		if (array_key_exists($type, Extra_Events::$field_types_by_name)) {
+			/* @var $field_type \ExtraEvents\Fields\FieldInterface */
+			$field_type = Extra_Events::$field_types_by_name[$type];
+			$field_type::init($this->plugin_slug);
+			$html = $field_type::get_admin($field, $field_value);
+		}
+
+
+//		$type = $field['type'];
+//		if (array_key_exists($type, Extra_Events::$field_types_by_name)) {
+//			/* @var $field_type \ExtraEvents\Fields\FieldInterface */
+//			$field_type = Extra_Events::$field_types_by_name[$type];
+//			$field_type::init($this->plugin_slug);
+//			$html = $field_type::get_front($field);
+//		}
+//
+//		if ($type == 'checkbox') {
+//			$html = $this->output_checkbox($field);
+//		}
+
+		return $html;
+	}
+
+	public function output_field_formatted_value($field_value, $field) {
+		$field_formatted_value = $field_value;
+
+		$type = $field['type'];
+		if (array_key_exists($type, Extra_Events::$field_types_by_name)) {
+			/* @var $field_type \ExtraEvents\Fields\FieldInterface */
+			$field_type = Extra_Events::$field_types_by_name[$type];
+			$field_type::init($this->plugin_slug);
+
+			$field_formatted_value = $field_type::get_formatted_value($field, $field_value);
+		}
+
+		return $field_formatted_value;
 	}
 }

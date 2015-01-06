@@ -28,6 +28,9 @@ class Time extends AbstractField {
 
 		return $html;
 	}
+//	public static function get_admin($field) {
+//		return self::get_front($field);
+//	}
 
 	public static function get_admin_override_type() {
 		return 'text';

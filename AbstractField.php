@@ -40,4 +40,11 @@ abstract class AbstractField implements FieldInterface {
 	public static function validate($field, $value, &$EM_Form) {
 		return true;
 	}
+
+	public static function get_admin($field, $value) {
+		return '';
+	}
+	public static function get_formatted_value($field, $value) {
+		return '';
+	}
 }

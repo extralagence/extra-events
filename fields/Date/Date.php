@@ -3,6 +3,7 @@
 namespace ExtraEvents\Fields;
 
 class Date extends AbstractField {
+
 	public static function init($plugin_slug) {
 //		wp_enqueue_style($plugin_slug . '-date', plugins_url( 'css/date.less', __FILE__ ), array(), \Extra_Events::VERSION );
 		wp_enqueue_script( $plugin_slug . '-date', plugins_url( 'js/date.js', __FILE__ ), array( 'jquery' ), \Extra_Events::VERSION );
@@ -25,6 +26,16 @@ class Date extends AbstractField {
 		$html .= '<p class="input-extra-date input-group input-text input-field-'.$id.'">';
 		$html .= 	'<label for="'.$id.'">'.$label.$required.'</label>';
 		$html .= 	'<input type="text" name="'.$id.'" id="'.$id.'" class="input">';
+		$html .= '</p>';
+
+		return $html;
+	}
+
+	public static function get_admin($field, $value) {
+		$id = $field['fieldid'];
+
+		$html  = '<p class="input-extra-date input-group input-text input-field-'.$id.'">';
+		$html .= 	'<input type="text" name="'.$id.'" id="'.$id.'" class="input" value="'.$value.'">';
 		$html .= '</p>';
 
 		return $html;

@@ -4,7 +4,7 @@ jQuery(function($) {
 	 * DATEPICKER
 	 *
 	 ********************/
-		// DATEPICKER FR
+	// DATEPICKER FR
 	$.datepicker.regional["fr"];
 	var dateInputs = $(".input-extra-date > .input");
 	dateInputs.each(function(){
