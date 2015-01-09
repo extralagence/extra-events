@@ -367,6 +367,11 @@ class Extra_Events {
 		/* @var $EM_Booking EM_Booking */
 		/* @var $extra_event_metabox ExtraMetaBox */
 		global $EM_Booking;
+
+		if (!isset($EM_Booking)) {
+			return $result;
+		}
+
 		$value_by_field_id = $EM_Booking->booking_meta['booking'];
 
 		$type = $field['type'];

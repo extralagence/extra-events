@@ -15,11 +15,9 @@ $current_user = wp_get_current_user();
         </div>
     <?php
     else:
-        $custom_fields = get_option('em_user_fields');
-        $EM_FORM = new EM_Form('em_user_fields');
-        Extra_Profile_Editor::checkForm($current_user, $custom_fields, $EM_FORM);
-        //var_dump($custom_fields);
-        //var_dump($current_user);
+        $custom_fields = get_option( 'em_user_fields' );
+        $EM_FORM       = new EM_Form( 'em_user_fields' );
+        echo Extra_Profile_Editor::$statusMessage;
         ?>
         <h1 class="main-title"><?php the_second_title(); ?></h1>
         <form name="profile-editor" id="profile-editor" action="./" method="post">

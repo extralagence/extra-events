@@ -62,6 +62,8 @@ class Extra_Profile_Editor {
      */
     protected $templates;
 
+    public static $statusMessage = "";
+
     /**
      * Initialize the plugin by setting localization and loading public scripts
      * and styles.
@@ -75,7 +77,7 @@ class Extra_Profile_Editor {
         add_filter('wp_insert_post_data', array( $this, 'register_project_templates' ) );
         add_filter('template_include', array( $this, 'view_project_template') );
         $this->templates = array(
-            'template-profile-editor.php'     => __( 'Gestion de mon profil 2', $this->plugin_slug )
+            'template-profile-editor.php'     => __( 'Gestion de mon profil', $this->plugin_slug )
         );
         $templates = wp_get_theme()->get_page_templates();
         $templates = array_merge( $templates, $this->templates );
@@ -84,8 +86,21 @@ class Extra_Profile_Editor {
         add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_styles' ) );
         add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_scripts' ) );
 
+        add_action('template_redirect', array($this, 'initialize_form'));
 
 
+
+    }
+
+    function initialize_form() {
+        if(is_page_template('template-profile-editor.php')) {
+            $current_user = wp_get_current_user();
+            if ( $current_user->exists() ) {
+                $custom_fields = get_option( 'em_user_fields' );
+                $EM_FORM       = new EM_Form( 'em_user_fields' );
+                self::checkForm( $current_user, $custom_fields, $EM_FORM );
+            }
+        }
     }
 
     public static function checkForm($current_user, $custom_fields, $EM_FORM) {
@@ -113,7 +128,7 @@ class Extra_Profile_Editor {
 
 
             /* Update user password. */
-            if ( !empty($_POST['pass1'] ) && !empty( $_POST['pass2'] ) ) {
+           if ( !empty($_POST['pass1'] ) && !empty( $_POST['pass2'] ) ) {
                 if ( $_POST['pass1'] == $_POST['pass2'] ) {
                     $current_user->__set('user_pass', $_POST['pass1']);
                 }else {
@@ -123,10 +138,8 @@ class Extra_Profile_Editor {
             }
 
             if(isset($custom_fields) && !empty($custom_fields)) {
-
                 foreach($custom_fields as $custom_field) {
-
-                    if(isset($_POST[$custom_field['fieldid']])) {
+                    if(isset($_POST[$custom_field['fieldid']]) && !empty($_POST[$custom_field['fieldid']])) {
                         $valid_field = $EM_FORM->validate_field($custom_field['fieldid'], $_POST[$custom_field['fieldid']]);
                         if($valid_field) {
                             update_user_meta( $current_user->data->ID, $custom_field['fieldid'], $_POST[$custom_field['fieldid']] );
@@ -134,7 +147,6 @@ class Extra_Profile_Editor {
                             $valid = false;
                         }
                     }
-
                 }
             }
 
@@ -150,9 +162,9 @@ class Extra_Profile_Editor {
 
                 if ( is_wp_error( $user_id ) ) {
                     $valid = false;
-                    $errors[] = __('Erreur lors de l\'enregistrement', 'extra-events');
+                    self::$statusMessage =  '<p class="message success">' . __('Erreur lors de l\'enregistrement', 'extra-events') . '</p>';
                 } else {
-                    echo '<p class="message success">' . __('Mise à jour effectuée avec succes', 'extra-events') . '</p>';
+                    self::$statusMessage =  '<p class="message success">' . __('Mise à jour effectuée avec succès', 'extra-events') . '</p>';
                 }
 
             }
