@@ -188,8 +188,7 @@ class Extra_Gateway_Paybox extends EM_Gateway {
 		global $wp_rewrite, $EM_Notices;
 		$notify_url = $this->get_payment_return_url().'&pbx_ipn=0';
 		$waiting_url = $this->get_payment_return_url().'&pbx_ipn=0';
-		$cancel_url = get_option('em_'. $this->gateway . "_cancel_return" );
-		// TODO ADD A RESPONSE URL WHICH RETURN A BLANK PAGE AND PROCEED THE TRANSACTION
+		$cancel_url = $this->get_payment_return_url().'&pbx_ipn=0'; //get_option('em_'. $this->gateway . "_cancel_return" );
 		$response_url = $this->get_payment_return_url().'&pbx_ipn=1';
 
 		//$currency_string = get_option('dbem_bookings_currency', 'USD');
@@ -280,8 +279,24 @@ class Extra_Gateway_Paybox extends EM_Gateway {
 	}
 
 	function say_thanks(){
-		if( !empty($_REQUEST['thanks_paybox']) ){
-			echo "<div class='em-booking-message em-booking-message-success'>".get_option('em_'.$this->gateway.'_booking_feedback_thanks').'</div>';
+
+		if( isset($_REQUEST['thanks_paybox']) && !empty($_REQUEST['thanks_paybox']) ) {
+			if ($_REQUEST['thanks_paybox'] == '2' || $_REQUEST['thanks_paybox'] == 2) {
+				echo "<div class='em-booking-message em-booking-message-success manual_approval_thanks'>".nl2br(get_option('em_'.$this->gateway.'_booking_feedback_manual_approval_thanks')).'</div><br />';
+				if (!is_user_logged_in()) {
+					echo "<div class='em-booking-message em-booking-message-success manual_approval_thanks_logout'>".nl2br(get_option('em_'.$this->gateway.'_booking_feedback_manual_approval_thanks_logout')).'</div><br />';
+				}
+			} else if ($_REQUEST['thanks_paybox'] == '3' || $_REQUEST['thanks_paybox'] == 3) {
+				echo "<div class='em-booking-message em-booking-message-success cancel_thanks'>".nl2br(get_option('em_'.$this->gateway.'_booking_feedback_cancel_thanks')).'</div><br />';
+				if (!is_user_logged_in()) {
+					echo "<div class='em-booking-message em-booking-message-success cancel_thanks_logout'>".nl2br(get_option('em_'.$this->gateway.'_booking_feedback_cancel_thanks_logout')).'</div><br />';
+				}
+			} else {
+				echo "<div class='em-booking-message em-booking-message-success thanks'>".nl2br(get_option('em_'.$this->gateway.'_booking_feedback_thanks')).'</div><br />';
+				if (!is_user_logged_in()) {
+					echo "<div class='em-booking-message em-booking-message-success thanks_logout'>".nl2br(get_option('em_'.$this->gateway.'_booking_feedback_thanks_logout')).'</div><br />';
+				}
+			}
 		}
 	}
 
@@ -386,6 +401,7 @@ class Extra_Gateway_Paybox extends EM_Gateway {
 	 */
 	function handle_payment_return() {
 		$success = false;
+		$manual_approval = false;
 
 		if (   isset($_GET['pbx_signature'])
 			&& isset($_GET['pbx_error'])
@@ -431,16 +447,23 @@ class Extra_Gateway_Paybox extends EM_Gateway {
 					case '00000' :
 						// SUCCESS
 						// case: successful payment
-						$this->record_transaction_no_duplication($EM_Booking, $price, 'EUR', $timestamp, $ref, __("Approuvée", "extra-admin"), '');
+						$this->record_transaction_no_duplication($EM_Booking, $price, 'EUR', $timestamp, $ref, __("Approuvée", "extra-events"), '');
 
-						if( $price >= $EM_Booking->get_price() && (!get_option('em_'.$this->gateway.'_manual_approval', false) || !get_option('dbem_bookings_approval')) ){
-							$EM_Booking->approve(true, true); //approve and ignore spaces
+						if( $price >= $EM_Booking->get_price() ){
+							if ( (!get_option('em_'.$this->gateway.'_manual_approval', false) || !get_option('dbem_bookings_approval')) ) {
+								// Automatic approval
+								$EM_Booking->approve(true, true); //approve and ignore spaces
+								$manual_approval = false;
+							} else {
+								$manual_approval = true;
+							}
 							$success = true;
+							do_action('em_payment_processed', $EM_Booking, $this);
 						} else {
-							//TODO do something if pb payment not enough
 							$EM_Booking->set_status(0); //Set back to normal "pending"
+							// Payment cancel
+							$success = false;
 						}
-						do_action('em_payment_processed', $EM_Booking, $this);
 
 						break;
 
@@ -515,7 +538,7 @@ class Extra_Gateway_Paybox extends EM_Gateway {
 
 						// case: payment is pending
 						$note = 'Last transaction is pending.';
-						$this->record_transaction_no_duplication($EM_Booking, $price, 'EUR', $timestamp, $ref, __("En Attente", "extra-admin"), $note);
+						$this->record_transaction_no_duplication($EM_Booking, $price, 'EUR', $timestamp, $ref, __("En Attente", "extra-events"), $note);
 
 						do_action('em_payment_pending', $EM_Booking, $this);
 						break;
@@ -571,8 +594,13 @@ Events Manager
 
 		if (!$ipn) {
 			if ($success) {
-				//redirect to reservation success
-				wp_redirect(get_option('em_'. $this->gateway . "_return" ));
+				if ($manual_approval) {
+					//redirect to reservation success but waiting manual approval
+					wp_redirect(get_option('em_'. $this->gateway . "_manual_approval_return" ));
+				} else {
+					//redirect to reservation success automatic approval
+					wp_redirect(get_option('em_'. $this->gateway . "_return" ));
+				}
 			} else {
 				wp_redirect(get_option('em_'. $this->gateway . "_cancel_return" ));
 			}
@@ -603,31 +631,68 @@ Events Manager
 		<table class="form-table">
 			<tbody>
 			<tr valign="top">
-				<th scope="row"><?php _e('Message de réussite', 'extra-admin') ?></th>
+				<th scope="row"><?php _e('Message de réussite', 'extra-events') ?></th>
 				<td>
 					<input type="text" name="paybox_booking_feedback" value="<?php esc_attr_e(get_option('em_'. $this->gateway . "_booking_feedback" )); ?>" style='width: 40em;' /><br />
-					<em><?php _e("Ce message est utilisé lorsqu'un utilisateur est redirigé vers PayBox pour effectuer son paiement",'extra-admin'); ?></em>
+					<em><?php _e("Ce message est utilisé lorsqu'un utilisateur est redirigé vers PayBox pour effectuer son paiement",'extra-events'); ?></em>
 				</td>
 			</tr>
 			<tr valign="top">
-				<th scope="row"><?php _e("Message d'echec", 'extra-admin') ?></th>
+				<th scope="row"><?php _e("Message d'echec", 'extra-events') ?></th>
 				<td>
 					<textarea name="paybox_booking_feedback_try_later"><?php esc_attr_e(get_option('em_'. $this->gateway . "_booking_feedback_try_later" )); ?></textarea><br />
-					<em><?php _e("Ce message est utilisé lorsque PayBox est injoignable.", "extra-admin"); ?></em>
+					<em><?php _e("Ce message est utilisé lorsque PayBox est injoignable.", "extra-events"); ?></em>
 				</td>
 			</tr>
 			<tr valign="top">
-				<th scope="row"><?php _e('Message de réussite (pour un ticket gratuit)', 'em-pro') ?></th>
+				<th scope="row"><?php _e('Message de réussite (pour un ticket gratuit)', 'extra-events') ?></th>
 				<td>
-					<input type="text" name="paybox_booking_feedback_free" value="<?php esc_attr_e(get_option('em_'. $this->gateway . "_booking_feedback_free" )); ?>" style='width: 40em;' /><br />
-					<em><?php _e("En cas de ticket gratuit, l'utilisateur n'est pas rediriger vers PayBox et ce message lui est présenté.", "extra-admin"); ?></em>
+					<textarea name="paybox_booking_feedback_free" ><?php esc_attr_e(get_option('em_'. $this->gateway . "_booking_feedback_free" )); ?></textarea><br />
+					<em><?php _e("En cas de ticket gratuit, l'utilisateur n'est pas rediriger vers PayBox et ce message lui est présenté.", "extra-events"); ?></em>
 				</td>
 			</tr>
 			<tr valign="top">
-				<th scope="row"><?php _e('Message de remerciement', 'em-pro') ?></th>
+				<th scope="row"><?php _e('Message de remerciement', 'extra-events') ?></th>
 				<td>
-					<input type="text" name="paybox_booking_feedback_thanks" value="<?php esc_attr_e(get_option('em_'. $this->gateway . "_booking_feedback_thanks" )); ?>" style='width: 40em;' /><br />
+					<textarea name="paybox_booking_feedback_thanks" ><?php esc_attr_e(get_option('em_'. $this->gateway . "_booking_feedback_thanks" )); ?></textarea><br />
 					<em><?php _e("Message utilisé lorsque le client revient de PayBox et a complété son paiement."); ?></em>
+				</td>
+			</tr>
+			<tr valign="top">
+				<th scope="row"><?php _e("Message de remerciement (suite)", 'extra-events') ?></th>
+				<td>
+					<textarea name="paybox_booking_feedback_thanks_logout" ><?php esc_attr_e(get_option('em_'. $this->gateway . "_booking_feedback_thanks_logout" )); ?></textarea><br />
+					<em><?php _e("Complement du message de remerciement si l'utilisateur n'a pas encore de compte"); ?></em>
+				</td>
+			</tr>
+
+			<tr valign="top">
+				<th scope="row"><?php _e('Message de remerciement (validation manuelle)', 'extra-events') ?></th>
+				<td>
+					<textarea name="paybox_booking_feedback_manual_approval_thanks" ><?php esc_attr_e(get_option('em_'. $this->gateway . "_booking_feedback_manual_approval_thanks" )); ?></textarea><br />
+					<em><?php _e("Message utilisé lorsque le client revient de PayBox et a complété son paiement. Mais la validation manuelle est activée"); ?></em>
+				</td>
+			</tr>
+			<tr valign="top">
+				<th scope="row"><?php _e("Message de remerciement (validation manuelle) (suite)", 'extra-events') ?></th>
+				<td>
+					<textarea name="paybox_booking_feedback_manual_approval_thanks_logout" ><?php esc_attr_e(get_option('em_'. $this->gateway . "_booking_feedback_manual_approval_thanks_logout" )); ?></textarea><br />
+					<em><?php _e("Complement du message de remerciement (validation manuelle) si l'utilisateur n'a pas encore de compte"); ?></em>
+				</td>
+			</tr>
+
+			<tr valign="top">
+				<th scope="row"><?php _e("Message de confirmation de l'annulation de la transaction", 'extra-events') ?></th>
+				<td>
+					<textarea name="paybox_booking_feedback_cancel_thanks" ><?php esc_attr_e(get_option('em_'. $this->gateway . "_booking_feedback_cancel_thanks" )); ?></textarea><br />
+					<em><?php _e("Message utilisé lorsque le client revient de PayBox mais en ayant annulé sa transation."); ?></em>
+				</td>
+			</tr>
+			<tr valign="top">
+				<th scope="row"><?php _e("Message de confirmation de l'annulation de la transaction (suite)", 'extra-events') ?></th>
+				<td>
+					<textarea name="paybox_booking_feedback_cancel_thanks_logout" ><?php esc_attr_e(get_option('em_'. $this->gateway . "_booking_feedback_cancel_thanks_logout" )); ?></textarea><br />
+					<em><?php _e("Complement du message de confirmation de l'annulation de la transaction si l'utilisateur n'a pas encore de compte"); ?></em>
 				</td>
 			</tr>
 			</tbody>
@@ -639,25 +704,25 @@ Events Manager
 		<table class="form-table">
 			<tbody>
 			<tr valign="top">
-				<th scope="row"><?php _e('Numéro de Site', 'extra-admin') ?></th>
+				<th scope="row"><?php _e('Numéro de Site', 'extra-events') ?></th>
 				<td><input type="text" name="paybox_site" value="<?php esc_attr_e( get_option('em_'. $this->gateway . "_site" )); ?>" />
 					<br />
 				</td>
 			</tr>
 			<tr valign="top">
-				<th scope="row"><?php _e('Numéro de Rang', 'extra-admin') ?></th>
+				<th scope="row"><?php _e('Numéro de Rang', 'extra-events') ?></th>
 				<td><input type="text" name="paybox_rank" value="<?php esc_attr_e( get_option('em_'. $this->gateway . "_rank" )); ?>" />
 					<br />
 				</td>
 			</tr>
 			<tr valign="top">
-				<th scope="row"><?php _e('Identifiant', 'extra-admin') ?></th>
+				<th scope="row"><?php _e('Identifiant', 'extra-events') ?></th>
 				<td><input type="text" name="paybox_id" value="<?php esc_attr_e( get_option('em_'. $this->gateway . "_id" )); ?>" />
 					<br />
 				</td>
 			</tr>
 			<tr valign="top">
-				<th scope="row"><?php _e('Clé secrète HMAC', 'extra-admin') ?></th>
+				<th scope="row"><?php _e('Clé secrète HMAC', 'extra-events') ?></th>
 				<td><input type="text" name="paybox_hmac_key" value="<?php esc_attr_e( get_option('em_'. $this->gateway . "_hmac_key" )); ?>" />
 					<br />
 				</td>
@@ -665,18 +730,23 @@ Events Manager
 
 
 			<tr valign="top">
-				<th scope="row"><?php _e('Devise', 'extra-admin') ?></th>
+				<th scope="row"><?php _e('Devise', 'extra-events') ?></th>
 				<td><?php echo esc_html(get_option('dbem_bookings_currency','USD')); ?><br /><i><?php echo sprintf(__('Set your currency in the <a href="%s">settings</a> page.','em-pro'),EM_ADMIN_URL.'&amp;page=events-manager-options#bookings'); ?></i></td>
 			</tr>
 
 			<tr valign="top">
-				<th scope="row"><?php _e('Language de la page de paiement', 'extra-admin') ?></th>
+				<th scope="row"><?php _e('Language de la page de paiement', 'extra-events') ?></th>
 				<td>
 					<select name="paybox_language">
-						<option value=""><?php _e('Default','extra-admin'); ?></option>
+						<option value=""><?php _e('Default','extra-events'); ?></option>
 						<?php
-						$ccodes = em_get_countries();
-						$paybox_language = get_option('em_'.$this->gateway.'_language', 'US');
+						$ccodes = array(
+							'FRA' => __("Français", 'extra-events'),
+							'GBR' => __("Anglais", 'extra-events'),
+							'DEU' => __("Allemand", 'extra-events'),
+							'ESP' => __("Espagnol", 'extra-events')
+						);
+						$paybox_language = get_option('em_'.$this->gateway.'_language', 'FRA');
 						foreach($ccodes as $key => $value){
 							if( $paybox_language == $key ){
 								echo '<option value="'.$key.'" selected="selected">'.$value.'</option>';
@@ -688,7 +758,7 @@ Events Manager
 
 					</select>
 					<br />
-					<i><?php _e('PayBox allows you to select a default language users will see. This is also determined by PayBox which detects the locale of the users browser. The default would be US.','em-pro') ?></i>
+					<i><?php _e('Langage utilisé par Paybox (Par défaut Français)','extra-events') ?></i>
 				</td>
 			</tr>
 			<tr valign="top">
@@ -706,6 +776,13 @@ Events Manager
 				<td>
 					<input type="text" name="paybox_return" value="<?php esc_attr_e(get_option('em_'. $this->gateway . "_return" )); ?>" style='width: 40em;' /><br />
 					<em><?php _e('Once a payment is completed, users will be offered a link to this URL which confirms to the user that a payment is made. If you would to customize the thank you page, create a new page and add the link here. For automatic redirect, you need to turn auto-return on in your PayBox settings.', 'em-pro'); ?></em>
+				</td>
+			</tr>
+			<tr valign="top">
+				<th scope="row"><?php _e('URL de retour (validation manuelle)', 'extra-events') ?></th>
+				<td>
+					<input type="text" name="paybox_manual_approval_return" value="<?php esc_attr_e(get_option('em_'. $this->gateway . "_manual_approval_return" )); ?>" style='width: 40em;' /><br />
+					<em><?php _e('URL attente une fois le paiement validé mais nécessitant une validation.', 'extra-events'); ?></em>
 				</td>
 			</tr>
 			<tr valign="top">
@@ -757,8 +834,14 @@ Events Manager
 			$this->gateway . "_booking_feedback_try_later" => wp_kses_data($_REQUEST[ $this->gateway.'_booking_feedback_try_later' ]),
 			$this->gateway . "_booking_feedback_free" => wp_kses_data($_REQUEST[ $this->gateway.'_booking_feedback_free' ]),
 			$this->gateway . "_booking_feedback_thanks" => wp_kses_data($_REQUEST[ $this->gateway.'_booking_feedback_thanks' ]),
+			$this->gateway . "_booking_feedback_thanks_logout" => wp_kses_data($_REQUEST[ $this->gateway.'_booking_feedback_thanks_logout' ]),
+			$this->gateway . "_booking_feedback_manual_approval_thanks" => wp_kses_data($_REQUEST[ $this->gateway.'_booking_feedback_manual_approval_thanks' ]),
+			$this->gateway . "_booking_feedback_manual_approval_thanks_logout" => wp_kses_data($_REQUEST[ $this->gateway.'_booking_feedback_manual_approval_thanks_logout' ]),
+			$this->gateway . "_booking_feedback_cancel_thanks" => wp_kses_data($_REQUEST[ $this->gateway.'_booking_feedback_cancel_thanks' ]),
+			$this->gateway . "_booking_feedback_cancel_thanks_logout" => wp_kses_data($_REQUEST[ $this->gateway.'_booking_feedback_cancel_thanks_logout' ]),
 			$this->gateway . "_booking_timeout" => $_REQUEST[ $this->gateway.'_booking_timeout' ],
 			$this->gateway . "_return" => $_REQUEST[ $this->gateway.'_return' ],
+			$this->gateway . "_manual_approval_return" => $_REQUEST[ $this->gateway.'_manual_approval_return' ],
 			$this->gateway . "_cancel_return" => $_REQUEST[ $this->gateway.'_cancel_return' ],
 			$this->gateway . "_form" => $_REQUEST[ $this->gateway.'_form' ]
 		);
