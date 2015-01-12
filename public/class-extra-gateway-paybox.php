@@ -198,13 +198,25 @@ class Extra_Gateway_Paybox extends EM_Gateway {
 		// PRICE IN CENTS
 		$price = $EM_Booking->get_price()*100;
 
+		//TODO switch vars if test;
+		$pbx_site = get_option('em_'. $this->gateway . "_site");
+		$pbx_rang = get_option('em_'. $this->gateway . "_rank");
+		$pbx_identifiant = get_option('em_'. $this->gateway . "_id");
+		$hmac_key = get_option('em_'. $this->gateway . "_hmac_key");
+		if (get_option('em_'. $this->gateway . "_status" ) == 'test') {
+			$pbx_site = get_option('em_'. $this->gateway . "_site_test");
+			$pbx_rang = get_option('em_'. $this->gateway . "_rank_test");
+			$pbx_identifiant = get_option('em_'. $this->gateway . "_id_test");
+			$hmac_key = get_option('em_'. $this->gateway . "_hmac_key_test");
+		}
+
 		$paybox_vars = array(
-			'PBX_SITE' => get_option('em_'. $this->gateway . "_site"),
-			'PBX_RANG' => get_option('em_'. $this->gateway . "_rank"),
-			'PBX_IDENTIFIANT' => get_option('em_'. $this->gateway . "_id"),
+			'PBX_SITE' => $pbx_site,
+			'PBX_RANG' => $pbx_rang,
+			'PBX_IDENTIFIANT' => $pbx_identifiant,
 			'PBX_TOTAL' => $price,
 			'PBX_DEVISE' => $currency,
-			'PBX_CMD' => $EM_Booking->booking_id.'_'.$EM_Booking->event_id,
+			'PBX_CMD' => $EM_Booking->booking_id.'_'.$EM_Booking->event_id.'_'.get_option('em_'. $this->gateway . "_suffix_command"),
 			'PBX_PORTEUR' => $EM_Booking->get_person()->user_email,
 			'PBX_RETOUR' => 'pbx_price:M;pbx_ref:R;pbx_auto:A;pbx_date:W;pbx_time:Q;pbx_error:E;pbx_signature:K',
 			'PBX_TIME' => date('c'),
@@ -232,7 +244,7 @@ class Extra_Gateway_Paybox extends EM_Gateway {
 			$string_paybox_vars .= $key.'='.$value;
 		}
 
-		$hmac_key = get_option('em_'. $this->gateway . "_hmac_key");
+
 		$binary_hmac_key = pack("H*", $hmac_key);
 
 		$hmac = strtoupper(hash_hmac('sha512', $string_paybox_vars, $binary_hmac_key));
@@ -250,7 +262,7 @@ class Extra_Gateway_Paybox extends EM_Gateway {
 		if (get_option('em_'. $this->gateway . "_status" ) == 'test') {
 			$url = $this->protocole.$this->preprod_url.$this->cgi_part_url;
 		} else {
-
+//			$url = $this->protocole.$this->prod_url.$this->cgi_part_url;
 			//TODO TEST WITH REAL PROD !
 			$servers = array($this->prod_url, //serveur primaire
 				$this->prod_url_mirror); //serveur secondaire
@@ -266,6 +278,7 @@ class Extra_Gateway_Paybox extends EM_Gateway {
 				if($server_status == "OK"){
 					//Le serveur est prêt et les services opérationnels
 					$serverOK = $server;
+					$url = $this->protocole.$server.$this->cgi_part_url;
 					break;
 				}
 				// else : La machine est disponible mais les services ne le sont pas.
@@ -427,6 +440,7 @@ class Extra_Gateway_Paybox extends EM_Gateway {
 			$timestamp = DateTime::createFromFormat('dmY H:i:s', $date.' '.$time)->format('Y-m-d H:i:s');
 
 			$validation = $this->check_signature();
+
 			if ($validation) {
 				EM_Pro::log("{$error} successfully received for {$price} EUR (Reference : {$ref}) - Bank authorization id : {$authorization_id} - IPN : {$ipn}", 'paybox');
 			} else {
@@ -439,6 +453,7 @@ class Extra_Gateway_Paybox extends EM_Gateway {
 
 			$EM_Booking = em_get_booking($booking_id);
 			if( !empty($EM_Booking->booking_id)){
+
 				//booking exists
 				$EM_Booking->manage_override = true; //since we're overriding the booking ourselves.
 				$user_id = $EM_Booking->person_id;
@@ -455,6 +470,8 @@ class Extra_Gateway_Paybox extends EM_Gateway {
 								$EM_Booking->approve(true, true); //approve and ignore spaces
 								$manual_approval = false;
 							} else {
+								// Manual approval
+								$EM_Booking->set_status(0); //Set back to normal "pending"
 								$manual_approval = true;
 							}
 							$success = true;
@@ -704,26 +721,60 @@ Events Manager
 		<table class="form-table">
 			<tbody>
 			<tr valign="top">
-				<th scope="row"><?php _e('Numéro de Site', 'extra-events') ?></th>
+				<th scope="row"><?php _e('Numéro de Site (prod)', 'extra-events') ?></th>
 				<td><input type="text" name="paybox_site" value="<?php esc_attr_e( get_option('em_'. $this->gateway . "_site" )); ?>" />
 					<br />
 				</td>
 			</tr>
 			<tr valign="top">
-				<th scope="row"><?php _e('Numéro de Rang', 'extra-events') ?></th>
+				<th scope="row"><?php _e('Numéro de Rang (prod)', 'extra-events') ?></th>
 				<td><input type="text" name="paybox_rank" value="<?php esc_attr_e( get_option('em_'. $this->gateway . "_rank" )); ?>" />
 					<br />
 				</td>
 			</tr>
 			<tr valign="top">
-				<th scope="row"><?php _e('Identifiant', 'extra-events') ?></th>
+				<th scope="row"><?php _e('Identifiant (prod)', 'extra-events') ?></th>
 				<td><input type="text" name="paybox_id" value="<?php esc_attr_e( get_option('em_'. $this->gateway . "_id" )); ?>" />
 					<br />
 				</td>
 			</tr>
 			<tr valign="top">
-				<th scope="row"><?php _e('Clé secrète HMAC', 'extra-events') ?></th>
+				<th scope="row"><?php _e('Clé secrète HMAC (prod)', 'extra-events') ?></th>
 				<td><input type="text" name="paybox_hmac_key" value="<?php esc_attr_e( get_option('em_'. $this->gateway . "_hmac_key" )); ?>" />
+					<br />
+				</td>
+			</tr>
+
+
+			<tr valign="top">
+				<th scope="row"><?php _e('Numéro de Site (test)', 'extra-events') ?></th>
+				<td><input type="text" name="paybox_site_test" value="<?php esc_attr_e( get_option('em_'. $this->gateway . "_site_test" )); ?>" />
+					<br />
+				</td>
+			</tr>
+			<tr valign="top">
+				<th scope="row"><?php _e('Numéro de Rang (test)', 'extra-events') ?></th>
+				<td><input type="text" name="paybox_rank_test" value="<?php esc_attr_e( get_option('em_'. $this->gateway . "_rank_test" )); ?>" />
+					<br />
+				</td>
+			</tr>
+			<tr valign="top">
+				<th scope="row"><?php _e('Identifiant (test)', 'extra-events') ?></th>
+				<td><input type="text" name="paybox_id_test" value="<?php esc_attr_e( get_option('em_'. $this->gateway . "_id_test" )); ?>" />
+					<br />
+				</td>
+			</tr>
+			<tr valign="top">
+				<th scope="row"><?php _e('Clé secrète HMAC (test)', 'extra-events') ?></th>
+				<td><input type="text" name="paybox_hmac_key_test" value="<?php esc_attr_e( get_option('em_'. $this->gateway . "_hmac_key_test" )); ?>" />
+					<br />
+				</td>
+			</tr>
+
+
+			<tr valign="top">
+				<th scope="row"><?php _e('Préfix numéro de commande', 'extra-events') ?></th>
+				<td><input type="text" name="paybox_suffix_command" value="<?php esc_attr_e( get_option('em_'. $this->gateway . "_suffix_command" )); ?>" />
 					<br />
 				</td>
 			</tr>
@@ -823,6 +874,13 @@ Events Manager
 			$this->gateway . "_rank" => $_REQUEST[ $this->gateway.'_rank' ],
 			$this->gateway . "_id" => $_REQUEST[ $this->gateway.'_id' ],
 			$this->gateway . "_hmac_key" => $_REQUEST[ $this->gateway.'_hmac_key' ],
+
+			$this->gateway . "_site_test" => $_REQUEST[ $this->gateway.'_site_test' ],
+			$this->gateway . "_rank_test" => $_REQUEST[ $this->gateway.'_rank_test' ],
+			$this->gateway . "_id_test" => $_REQUEST[ $this->gateway.'_id_test' ],
+			$this->gateway . "_hmac_key_test" => $_REQUEST[ $this->gateway.'_hmac_key_test' ],
+
+			$this->gateway . "_suffix_command" => $_REQUEST[ $this->gateway.'_suffix_command' ],
 			$this->gateway . "_currency" => $_REQUEST[ 'currency' ],
 			$this->gateway . "_language" => $_REQUEST[ $this->gateway.'_language' ],
 			$this->gateway . "_status" => $_REQUEST[ $this->gateway.'_status' ],

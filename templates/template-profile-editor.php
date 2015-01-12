@@ -16,7 +16,6 @@ $current_user = wp_get_current_user();
     <?php
     else:
         $custom_fields = get_option( 'em_user_fields' );
-        $EM_FORM       = new EM_Form( 'em_user_fields' );
         echo Extra_Profile_Editor::$statusMessage;
         ?>
         <h1 class="main-title"><?php the_second_title(); ?></h1>
@@ -64,10 +63,11 @@ $current_user = wp_get_current_user();
             <?php if(isset($custom_fields) && !empty($custom_fields)): ?>
             <fieldset>
                 <legend><?php _e("Autres informations", "extra-events"); ?></legend>
-                <?php foreach($custom_fields as $custom_field): ?>
+                <?php
+                foreach($custom_fields as $custom_field): ?>
                 <p>
                     <label for="<?php echo $custom_field['fieldid']; ?>"><?php echo $custom_field['label']; ?></label>
-                    <?php echo $EM_FORM->output_field_input($custom_field, esc_attr($current_user->get($custom_field['fieldid']))); ?>
+                    <?php echo Extra_Profile_Editor::$EM_FORM->output_field_input($custom_field, esc_attr($current_user->get($custom_field['fieldid']))); ?>
                 </p>
                 <?php endforeach; ?>
             </fieldset>

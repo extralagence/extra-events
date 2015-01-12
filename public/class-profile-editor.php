@@ -63,6 +63,7 @@ class Extra_Profile_Editor {
     protected $templates;
 
     public static $statusMessage = "";
+    public static $EM_FORM;
 
     /**
      * Initialize the plugin by setting localization and loading public scripts
@@ -97,13 +98,16 @@ class Extra_Profile_Editor {
             $current_user = wp_get_current_user();
             if ( $current_user->exists() ) {
                 $custom_fields = get_option( 'em_user_fields' );
-                $EM_FORM       = new EM_Form( 'em_user_fields' );
-                self::checkForm( $current_user, $custom_fields, $EM_FORM );
+                self::$EM_FORM = new EM_Form( 'em_user_fields' );
+                self::$EM_FORM->form_required_error = get_option('em_booking_form_error_required');
+                self::checkForm( $current_user, $custom_fields );
             }
         }
     }
 
-    public static function checkForm($current_user, $custom_fields, $EM_FORM) {
+    public static function checkForm($current_user, $custom_fields) {
+
+        self::$statusMessage = '';
 
         if(isset($_POST) && array_key_exists("_wpnonce", $_POST) && wp_verify_nonce($_POST['_wpnonce'], 'extra-profile-editor-nonce')) {
 
@@ -112,7 +116,7 @@ class Extra_Profile_Editor {
            if(isset($_POST['user_email'])) {
                if(!is_email($_POST['user_email'])) {
                     $valid = false;
-                    $EM_FORM->add_error(__('Email non-valide', 'extra-events'));
+                   self::$EM_FORM->add_error(__('Email non-valide', 'extra-events'));
                } else {
                     $current_user->__set('user_email', $_POST['user_email']);
                }
@@ -133,38 +137,38 @@ class Extra_Profile_Editor {
                     $current_user->__set('user_pass', $_POST['pass1']);
                 }else {
                     $valid = false;
-                    $EM_FORM->add_error(__('Les mots de passe doivent être identiques', 'extra-events'));
+                    self::$EM_FORM->add_error(__('Les mots de passe doivent être identiques', 'extra-events'));
                 }
             }
 
             if(isset($custom_fields) && !empty($custom_fields)) {
                 foreach($custom_fields as $custom_field) {
-                    if(isset($_POST[$custom_field['fieldid']]) && !empty($_POST[$custom_field['fieldid']])) {
-                        $valid_field = $EM_FORM->validate_field($custom_field['fieldid'], $_POST[$custom_field['fieldid']]);
+                    //if(isset($_POST[$custom_field['fieldid']]) && !empty($_POST[$custom_field['fieldid']])) {
+                        $valid_field = self::$EM_FORM->validate_field($custom_field['fieldid'], $_POST[$custom_field['fieldid']]);
                         if($valid_field) {
                             update_user_meta( $current_user->data->ID, $custom_field['fieldid'], $_POST[$custom_field['fieldid']] );
                         } else {
                             $valid = false;
                         }
-                    }
+                    //}
                 }
             }
 
             if(!$valid) {
-                echo '<div class="message errors">';
-                foreach($EM_FORM->get_errors() as $error) {
-                    echo '<p>' . $error . '</p>';
+                self::$statusMessage .= '<div class="message errors">';
+                foreach(self::$EM_FORM->get_errors() as $error) {
+                    self::$statusMessage .= '<p>' . $error . '</p>';
                 }
-                echo '</div>';
+                self::$statusMessage .= '</div>';
             } else {
 
                 $user_id = wp_update_user( $current_user );
 
                 if ( is_wp_error( $user_id ) ) {
                     $valid = false;
-                    self::$statusMessage =  '<p class="message success">' . __('Erreur lors de l\'enregistrement', 'extra-events') . '</p>';
+                    self::$statusMessage .=  '<p class="message errors">' . __('Erreur lors de l\'enregistrement', 'extra-events') . '</p>';
                 } else {
-                    self::$statusMessage =  '<p class="message success">' . __('Mise à jour effectuée avec succès', 'extra-events') . '</p>';
+                    self::$statusMessage .=  '<p class="message success">' . __('Mise à jour effectuée avec succès', 'extra-events') . '</p>';
                 }
 
             }
