@@ -1,0 +1,3 @@
+[submodule "admin/includes/PHPExcel"]
+	path = admin/includes/PHPExcel
+	url = https://github.com/PHPOffice/PHPExcel.git

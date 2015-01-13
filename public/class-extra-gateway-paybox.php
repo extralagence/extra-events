@@ -467,11 +467,15 @@ class Extra_Gateway_Paybox extends EM_Gateway {
 						if( $price >= $EM_Booking->get_price() ){
 							if ( (!get_option('em_'.$this->gateway.'_manual_approval', false) || !get_option('dbem_bookings_approval')) ) {
 								// Automatic approval
-								$EM_Booking->approve(true, true); //approve and ignore spaces
+								if ($EM_Booking->booking_status != 1) {
+									$EM_Booking->approve(true, true); //approve and ignore spaces
+								}
 								$manual_approval = false;
 							} else {
 								// Manual approval
-								$EM_Booking->set_status(0); //Set back to normal "pending"
+								if ($EM_Booking->booking_status != 0) {
+									$EM_Booking->set_status(0, true); //Set back to normal "pending"
+								}
 								$manual_approval = true;
 							}
 							$success = true;
