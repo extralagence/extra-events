@@ -99,7 +99,7 @@ class Extra_Events_Export_Xls {
 
 
 
-			$xls_sheet = $this->create_xls_sheet($xls_file, $EM_Event->post_title, $allowed_columns, $first, count($tickets_by_id) > 1);
+			$xls_sheet = $this->create_xls_sheet($xls_file, substr($EM_Event->post_title, 0, 30), $allowed_columns, $first, count($tickets_by_id) > 1);
 			$xls_row_id = 2;
 			while(!empty($EM_Bookings->bookings)){
 				foreach( $EM_Bookings->bookings as $EM_Booking ) {
