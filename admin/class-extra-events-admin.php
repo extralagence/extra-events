@@ -39,6 +39,10 @@ class Extra_Events_Admin {
 	 */
 	protected $plugin_screen_hook_suffix = null;
 
+
+	protected $events;
+	protected $all_booking_ids_by_bill_events = array();
+
 	/**
 	 * Initialize the plugin by loading admin scripts & styles and adding a
 	 * settings page and menu.
@@ -69,6 +73,7 @@ class Extra_Events_Admin {
 		add_filter( 'plugin_action_links_' . $plugin_basename, array( $this, 'add_action_links' ) );
 
 		require_once( plugin_dir_path( __FILE__ ) . 'class-export-xls.php' );
+		require_once( plugin_dir_path( __FILE__ ) . 'class-export-bill.php' );
 		add_action('init', array( $this, 'init_actions' ),11);
 
 		add_filter( 'extra_add_global_options_section', array( $this, 'add_global_options' ));
@@ -79,6 +84,23 @@ class Extra_Events_Admin {
 		add_action( 'emp_form_add_custom_fields', array( $this, 'add_custom_fields'));
 		add_filter( 'emp_forms_output_field_input', array( $this, 'output_field_input' ), 10, 4);
 		add_filter( 'extra_emp_forms_get_formatted_value', array( $this, 'output_field_formatted_value' ), 10, 2);
+
+
+		// BILL GENERATION
+		add_action( 'wp_ajax_generate_bills', array( $this, 'generate_bills') );
+		add_action( 'wp_ajax_create_zip_bill', array( $this, 'create_zip_bill') );
+
+		add_filter('em_bookings_table_booking_actions_5', array( $this, 'actions_for_bill'), 10, 2);
+		//add_filter('em_bookings_table_booking_actions_4', 'actions_for_bill', 10, 2);
+		//add_filter('em_bookings_table_booking_actions_3', 'actions_for_bill', 10, 2);
+		//add_filter('em_bookings_table_booking_actions_2', 'actions_for_bill', 10, 2);
+		add_filter('em_bookings_table_booking_actions_1',  array( $this, 'actions_for_bill'), 10, 2);
+		add_filter('em_bookings_table_booking_actions_0',  array( $this, 'actions_for_bill'), 10, 2);
+
+		add_filter('em_action_bookings_bill_generate',  array( $this, 'em_action_bill_generate'), 10, 2);
+
+		add_filter('em_booking_save', array( $this, 'update_bill_on_booking_save'), 10, 2);
+		add_action('em_bookings_single_metabox_footer', array( $this, 'show_booking_admin_button'), 10, 1);
 	}
 
 	/**
@@ -149,6 +171,45 @@ class Extra_Events_Admin {
 		$screen = get_current_screen();
 		if ( $this->plugin_screen_hook_suffix == $screen->id ) {
 			wp_enqueue_script( $this->plugin_slug . '-admin-script', plugins_url( 'assets/js/admin.js', __FILE__ ), array( 'jquery' ), Extra_Events::VERSION );
+//			wp_enqueue_style( $handle, $src = false, $deps = array(), $ver = false, $media = 'all' );
+			wp_enqueue_style( $this->plugin_slug . '-admin-style', plugins_url( 'assets/css/admin.css', __FILE__ ));
+
+			$this->events = EM_Events::get();
+
+			$this->all_booking_ids_by_bill_events = array();
+			/* @var $EM_Event Em_Event */
+			foreach ($this->events as $EM_Event) {
+				$bookings = $EM_Event->get_bookings();
+				$booking_ids_for_current_event = array();
+
+				/* @var $EM_Booking EM_Booking */
+				foreach ($bookings->bookings as $EM_Booking) {
+					switch ($EM_Booking->booking_status) {
+						case 0 :
+						case 1 :
+						case 5 :
+							$booking_ids_for_current_event[] = $EM_Booking->booking_id;
+							break;
+						default:
+							break;
+					}
+				}
+
+				if (!empty($booking_ids_for_current_event)) {
+					$this->all_booking_ids_by_bill_events[] = array(
+						'id' => $EM_Event->event_id,
+						'name' => $EM_Event->event_name,
+						'bookingIds' => $booking_ids_for_current_event
+					);
+				}
+			}
+
+			$exportBillOptions = array(
+				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+				'allBookingIdsByEventIds' => $this->all_booking_ids_by_bill_events
+			);
+
+			wp_localize_script($this->plugin_slug . '-admin-script', 'exportBillOptions', $exportBillOptions);
 		}
 	}
 
@@ -373,5 +434,208 @@ class Extra_Events_Admin {
 		}
 
 		return $field_formatted_value;
+	}
+
+	/***************************
+	 *
+	 *
+	 * BILLS GENERATION
+	 *
+	 *
+	 **************************/
+	public function generate_bills() {
+		$responses = array();
+		$exporter = new Extra_Events_Export_Bill();
+
+		$force_refresh = intval($_POST['force_refresh']) == 1;
+		$raw_booking_ids = $_POST['booking_ids'];
+		foreach ( $raw_booking_ids as $current_raw_id ) {
+			$responses[] = $exporter->check_bill(intval($current_raw_id), $force_refresh);
+		}
+
+		echo wp_json_encode($responses);
+
+		wp_die(); // this is required to terminate immediately and return a proper response
+	}
+
+	public function create_zip_bill() {
+		$exporter = new Extra_Events_Export_Bill();
+
+		$raw_ids = $_POST['booking_ids'];
+		$booking_ids = array();
+		foreach ( $raw_ids as $current_raw_id ) {
+			$booking_ids[] = intval($current_raw_id);
+		}
+
+		$event_id = intval($_POST['event_id']);
+		$current_zip = intval($_POST['current_zip']);
+		$total_zip = intval($_POST['total_zip']);
+		$response = $exporter->create_zip($event_id, $booking_ids, $current_zip, $total_zip);
+
+		echo wp_json_encode($response);
+		wp_die(); // this is required to terminate immediately and return a proper response
+	}
+
+	/**
+	 * @param $actions
+	 * @param $EM_Booking EM_Booking
+	 *
+	 * @return mixed
+	 */
+	public function actions_for_bill($actions, $EM_Booking) {
+		if (defined('EXTRA_EVENTS_BILL') && EXTRA_EVENTS_BILL == true) {
+			// Only for waiting, waiting paiement and approve booking !
+			if ($EM_Booking->booking_status == 5 || $EM_Booking->booking_status == 1 || $EM_Booking->booking_status == 0) {
+				$bill_location = Extra_Events_Export_Bill::get_bill_location($EM_Booking->event_id, $EM_Booking->booking_id);
+				if (file_exists($bill_location['pdfpath'])) {
+					$actions['bill_see'] = '<a href="'.$bill_location['pdfurl'].'" target="_blank">Voir la facture</a>';
+				} else {
+					//$actions['bill_generate'] = '<a href="#bill_generate">Générer la facture</a>';
+					// Hack using class: em-bookings-reject
+					$actions['bill_generate'] = '<a class="em-bookings-bill-generate em-bookings-reject" href="'.em_add_get_params($_SERVER['REQUEST_URI'], array('action'=>'bookings_bill_generate', 'booking_id'=>$EM_Booking->booking_id)).'">'.esc_html__emp('Générer la facture', 'extra').'</a>';
+				}
+			}
+		}
+
+		return $actions;
+	}
+
+	/**
+	 * @param $return
+	 * @param $EM_Booking EM_Booking
+	 *
+	 * @return array
+	 */
+	function em_action_bill_generate($return, $EM_Booking) {
+		$bill = apply_filters('extra-events-generate-bill', null, $EM_Booking);
+		$success = $bill != null;
+		$message = ($success) ? '<a href="'.$bill['pdfurl'].'" target="_blank">'.__('Voir la facture générée', 'extra').'</a>' : __("Oups une erreur est survenue...", 'extra');
+
+		if (defined( 'DOING_AJAX')) {
+			echo $message;
+			die;
+		}
+
+		return array('result'=> $success, 'message'=> $message);
+	}
+
+	/**
+	 * @param $saved boolean
+	 * @param $EM_Booking EM_Booking
+	 *
+	 * @return boolean
+	 */
+	public function update_bill_on_booking_save ($saved, $EM_Booking) {
+		if (is_admin()) {
+			if ($saved) {
+				switch ($EM_Booking->booking_status) {
+					case 0 :
+					case 1 :
+					case 5 :
+						apply_filters('extra-events-generate-bill', null, $EM_Booking);
+						break;
+					default:
+						break;
+				}
+			}
+		}
+
+		return $saved;
+	}
+
+	/**
+	 * @param $EM_Booking EM_Booking
+	 */
+	public function show_booking_admin_button ($EM_Booking) {
+		if (defined('EXTRA_EVENTS_BILL') && EXTRA_EVENTS_BILL == true) {
+			$bill_location = Extra_Events_Export_Bill::get_bill_location($EM_Booking->event_id, $EM_Booking->booking_id);
+			$has_bill = file_exists($bill_location['pdfpath']);
+			?>
+
+			<style>
+				.extra-events-notification {
+					line-height: 40px;
+					margin-bottom: 10px;
+				}
+
+				.extra-events-loader {
+					position: relative;
+					top: 5px;
+					margin-left: 10px;
+					margin-right: 10px;
+					visibility: hidden;
+				}
+				.extra-events-loader.loading {
+					visibility: visible;
+				}
+			</style>
+
+			<div class="extra-events-notification extra-events-notification-success" style="display: none;"><?php _e("La facture a été générée", 'extra-admin'); ?></div>
+			<div class="extra-events-notification extra-events-notification-error" style="display: none;"><?php _e("Impossible de générer la facture", 'extra-admin'); ?></div>
+
+			<div id="em-gateway-payment" class="stuffbox">
+				<h3>Facture associée</h3>
+
+				<div class="inside">
+					<div class="has_bill"<?php echo ($has_bill) ? '' : ' style="display: none;"'; ?>>
+						<p><?php _e("Il y a une facture associée", 'extra-admin'); ?></p>
+						<a class="extra-events-button button button-primary extra-events-generate-bill" href="#" target="_blank">Regénérer la facture</a>
+						<img class="extra-events-loader" src="<?php echo plugin_dir_url( __FILE__ ) . '../admin/assets/img/ajax-loader.gif' ?>" />
+						<a class="extra-events-button button button-primary" href="<?php echo $bill_location['pdfurl']; ?>" target="_blank">Voir la facture</a>
+					</div>
+					<div class="not_bill"<?php echo ($has_bill) ? ' style="display: none;"' : ''; ?>>
+						<p><?php _e("Il n'y a pas de facture associée", 'extra-admin'); ?></p>
+						<a class="extra-events-button button button-primary extra-events-generate-bill" href="#" target="_blank">Générer la facture</a>
+						<img class="extra-events-loader" src="<?php echo plugin_dir_url( __FILE__ ) . '../admin/assets/img/ajax-loader.gif' ?>" />
+					</div>
+				</div>
+				<script>
+					// SORRY FOR INLINE JAVASCRIPT :'(
+					jQuery(function ($) {
+						var ajaxUrl = '<?php echo admin_url( 'admin-ajax.php' ) ?>',
+							bookingId = <?php echo $EM_Booking->booking_id; ?>;
+
+						$('.extra-events-generate-bill').on('click', function (event) {
+							event.preventDefault();
+
+							$('.extra-events-notification').hide();
+							$('.extra-events-button').addClass('disabled');
+							$('.extra-events-loader').addClass('loading');
+
+							var data = {
+								'action': 'generate_bills',
+								'booking_ids': [bookingId],
+								'force_refresh' : 1
+							};
+
+							$.post(ajaxUrl, data, function(responseString) {
+								var responses = null;
+								try {
+									responses = $.parseJSON(responseString);
+								} catch (e) {
+									console.log(responseString);
+									$('.extra-events-notification-error').addClass('error').show();
+								}
+								if (responses.length == 1) {
+									var response = responses[0];
+									if (response.success) {
+										$('.has_bill').show();
+										$('.not_bill').hide();
+										$('.extra-events-notification-success').addClass('updated').show();
+									} else {
+										$('.extra-events-notification-error').addClass('error').show();
+									}
+								} else {
+									$('.extra-events-notification-error').addClass('error').show();
+								}
+								$('.extra-events-button').removeClass('disabled');
+								$('.extra-events-loader').removeClass('loading');
+							});
+						});
+					});
+				</script>
+			</div>
+			<?php
+		}
 	}
 }

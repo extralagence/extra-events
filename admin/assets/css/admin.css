@@ -1,0 +1,12 @@
+.export-bill-loader {
+	position: relative;
+	top: 3px;
+	margin: 0 0 0 10px;
+	display: none;
+}
+.processing .export-bill-loader {
+	display: inline-block;
+}
+.export-bill-count {
+	line-height: 28px;
+}
